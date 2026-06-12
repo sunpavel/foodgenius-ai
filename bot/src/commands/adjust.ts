@@ -3,8 +3,13 @@ import { adjustMealPlan } from '../ai/meal-planner';
 import { webAppButton } from '../utils/webapp';
 import { loadUserData, saveUserData } from '../data/user-storage';
 
+// Защита от дублей: Telegram ретраит webhook, если ответ не пришёл мгновенно
+const inFlight = new Set<number>();
+
 export async function adjustCommand(ctx: Context) {
   const userId = ctx.from!.id;
+
+  if (inFlight.has(userId)) return;
 
   const request = ctx.match?.toString().trim();
   if (!request) {
@@ -24,35 +29,41 @@ export async function adjustCommand(ctx: Context) {
     return;
   }
 
+  inFlight.add(userId);
   const thinking = await ctx.reply('✏️ Корректирую план...');
 
-  try {
-    const mealPlan = await adjustMealPlan(userData.preferences, userData.mealPlan, request);
-    await saveUserData(userId, { mealPlan });
+  // Правка идёт в фоне — webhook-ответ Telegram возвращается сразу (см. plan.ts)
+  void (async () => {
+    try {
+      const mealPlan = await adjustMealPlan(userData.preferences!, userData.mealPlan!, request);
+      await saveUserData(userId, { mealPlan });
 
-    await ctx.api.editMessageText(
-      ctx.chat!.id,
-      thinking.message_id,
-      '✅ План обновлён!',
-    );
+      await ctx.api.editMessageText(
+        ctx.chat!.id,
+        thinking.message_id,
+        '✅ План обновлён!',
+      );
 
-    await ctx.reply('📅 *Изменения внесены:*', {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [
-            webAppButton('📅 Календарь питания', '/calendar'),
-            webAppButton('🛒 Список покупок', '/shopping'),
+      await ctx.reply('📅 *Изменения внесены:*', {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              webAppButton('📅 Календарь питания', '/calendar'),
+              webAppButton('🛒 Список покупок', '/shopping'),
+            ],
           ],
-        ],
-      },
-    });
-  } catch (err) {
-    console.error('Plan adjustment error:', err);
-    await ctx.api.editMessageText(
-      ctx.chat!.id,
-      thinking.message_id,
-      '❌ Не удалось изменить план. Попробуйте ещё раз.',
-    );
-  }
+        },
+      });
+    } catch (err) {
+      console.error('Plan adjustment error:', err);
+      await ctx.api.editMessageText(
+        ctx.chat!.id,
+        thinking.message_id,
+        '❌ Не удалось изменить план. Попробуйте ещё раз.',
+      ).catch(() => {});
+    } finally {
+      inFlight.delete(userId);
+    }
+  })();
 }
