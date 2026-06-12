@@ -65,10 +65,20 @@ function Block({ icon, title, footer, children }: { icon: ReactNode; title: stri
   );
 }
 
+const GEN_STEPS = [
+  'Анализирую ваш профиль...',
+  'Подбираю блюда под предпочтения...',
+  'Считаю КБЖУ на каждый день...',
+  'Собираю список покупок...',
+  'Почти готово...',
+];
+
+type Phase = 'idle' | 'saving' | 'generating' | 'done' | 'error';
+
 export default function SetupPage() {
   const [prefs, setPrefs] = useState<UserPreferences>(DEFAULT);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [genStep, setGenStep] = useState(0);
   const { getHeaders, getQueryUserId } = useTelegram();
   const navigate = useNavigate();
 
@@ -79,20 +89,40 @@ export default function SetupPage() {
       .catch(() => {});
   }, []);
 
+  // Циклическая смена статуса во время генерации
+  useEffect(() => {
+    if (phase !== 'generating') return;
+    const t = setInterval(() => setGenStep((s) => (s + 1) % GEN_STEPS.length), 6000);
+    return () => clearInterval(t);
+  }, [phase]);
+
   async function handleSave() {
-    setSaving(true);
+    setPhase('saving');
     try {
-      await fetch('/api/user/preferences', {
+      const saveRes = await fetch(`/api/user/preferences${getQueryUserId()}`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(prefs),
-      }).catch(() => {});
-      setSaved(true);
-      setTimeout(() => navigate('/calendar'), 900);
-    } finally {
-      setSaving(false);
+      });
+      if (!saveRes.ok) throw new Error('save failed');
+
+      // Бесшовная генерация плана сразу после сохранения профиля
+      setPhase('generating');
+      setGenStep(0);
+      const genRes = await fetch(`/api/user/generate-plan${getQueryUserId()}`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+      if (!genRes.ok) throw new Error('generate failed');
+
+      setPhase('done');
+      setTimeout(() => navigate('/calendar'), 800);
+    } catch {
+      setPhase('error');
     }
   }
+
+  const busy = phase === 'saving' || phase === 'generating' || phase === 'done';
 
   return (
     <div style={{ padding: '20px 16px 0' }}>
@@ -333,17 +363,45 @@ export default function SetupPage() {
       {/* Save CTA */}
       <ShimmerButton
         onClick={handleSave}
-        disabled={saving || saved}
-        background={saved ? 'rgba(52,211,153,0.18)' : undefined}
+        disabled={busy}
+        background={phase === 'done' ? 'rgba(52,211,153,0.18)' : undefined}
       >
-        {saved ? (
+        {phase === 'done' ? (
           <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent)' }}>
-            <CheckIcon size={18} /> Сохранено
+            <CheckIcon size={18} /> План готов!
           </span>
-        ) : saving ? 'Сохраняю...' : 'Сохранить и спланировать неделю'}
+        ) : phase === 'generating' ? (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <motion.span
+              animate={{ rotate: 360 }}
+              transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+              style={{
+                width: 16, height: 16, borderRadius: '50%', display: 'inline-block',
+                border: '2px solid var(--card-border)', borderTopColor: 'var(--accent)',
+              }}
+            />
+            Создаю план...
+          </span>
+        ) : phase === 'saving' ? 'Сохраняю...' : 'Сохранить и спланировать неделю'}
       </ShimmerButton>
+
+      {phase === 'generating' && (
+        <motion.p
+          key={genStep}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, margin: '10px 0 0' }}
+        >
+          {GEN_STEPS[genStep]}
+        </motion.p>
+      )}
+      {phase === 'error' && (
+        <p style={{ textAlign: 'center', color: 'var(--rose)', fontSize: 13, margin: '10px 0 0' }}>
+          Не получилось — попробуйте ещё раз или отправьте /plan боту
+        </p>
+      )}
       <p style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 12, margin: '10px 0 16px' }}>
-        План генерируется командой /plan в боте
+        AI соберёт меню на неделю за ~30 секунд
       </p>
     </div>
   );

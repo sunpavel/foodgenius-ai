@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { loadUserData, saveUserData } from '../data/user-storage';
 import { validateTelegramWebAppData, extractUserIdFromInitData } from '../utils/validation';
+import { generateMealPlan } from '../ai/meal-planner';
 
 export function createRouter(): Router {
   const router = Router();
@@ -57,6 +58,34 @@ export function createRouter(): Router {
       const data = await loadUserData(userId);
       res.json(data ?? { userId });
     } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Сгенерировать план прямо из Mini App (бесшовно, без команды /plan в чате)
+  const generating = new Set<number>();
+  router.post('/user/generate-plan', async (req: Request, res: Response) => {
+    try {
+      let userId = getUserId(req);
+      if (!userId && process.env.NODE_ENV !== 'production') {
+        userId = Number(req.query.userId) || 0;
+      }
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const data = await loadUserData(userId);
+      if (!data?.preferences) return res.status(400).json({ error: 'No preferences' });
+
+      if (generating.has(userId)) return res.status(429).json({ error: 'Already generating' });
+      generating.add(userId);
+      try {
+        const mealPlan = await generateMealPlan(data.preferences, data.mealPlan);
+        await saveUserData(userId, { mealPlan });
+        res.json(mealPlan);
+      } finally {
+        generating.delete(userId);
+      }
+    } catch (err) {
+      console.error('Webapp plan generation error:', err);
       res.status(500).json({ error: String(err) });
     }
   });

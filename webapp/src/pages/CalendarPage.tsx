@@ -162,6 +162,8 @@ function MealCard({ label, tint, meal, delay }: { label: string; tint: string; m
 export default function CalendarPage() {
   const [plan, setPlan] = useState<MealPlan | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string>(JS_TO_KEY[new Date().getDay()]);
   const { initData, getHeaders, getQueryUserId } = useTelegram();
 
@@ -195,10 +197,33 @@ export default function CalendarPage() {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '70vh', padding: '0 32px', textAlign: 'center' }}>
         <div style={{ fontSize: 56, marginBottom: 16 }}>🍳</div>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Плана пока нет</h2>
-        <p style={{ color: 'var(--muted)', fontSize: 14, lineHeight: 1.5, marginTop: 8 }}>
-          Отправьте боту команду <span className="gradient-text" style={{ fontWeight: 700 }}>/plan</span> —
+        <p style={{ color: 'var(--muted)', fontSize: 14, lineHeight: 1.5, marginTop: 8, marginBottom: 24 }}>
           AI соберёт меню на неделю под ваш профиль за ~30 секунд
         </p>
+        <button
+          className="btn btn-primary"
+          style={{ maxWidth: 320, opacity: generating ? 0.7 : 1 }}
+          disabled={generating}
+          onClick={async () => {
+            setGenerating(true);
+            try {
+              const r = await fetch(`/api/user/generate-plan${getQueryUserId()}`, { method: 'POST', headers: getHeaders() });
+              if (!r.ok) throw new Error();
+              setPlan(await r.json());
+            } catch {
+              setGenError(true);
+            } finally {
+              setGenerating(false);
+            }
+          }}
+        >
+          {generating ? 'Создаю план... ~30 сек' : '🚀 Сгенерировать план'}
+        </button>
+        {genError && (
+          <p style={{ color: 'var(--rose)', fontSize: 13, marginTop: 12 }}>
+            Не получилось — сначала заполните Профиль или отправьте /plan боту
+          </p>
+        )}
       </div>
     );
   }
