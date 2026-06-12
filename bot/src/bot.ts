@@ -12,6 +12,7 @@ import { adjustCommand } from './commands/adjust';
 import { handleCallback } from './handlers/callbacks';
 import { handleInlineQuery } from './handlers/inline';
 import { createRouter } from './api/routes';
+import { publicUrl } from './utils/webapp';
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN is required in .env');
@@ -59,15 +60,22 @@ function mountWebapp() {
   console.log(`Serving Mini App from ${publicDir}`);
 }
 
-if (process.env.NODE_ENV === 'production' && process.env.WEBHOOK_URL) {
+const PUBLIC_URL = publicUrl();
+console.log(`Public URL: ${PUBLIC_URL || '(не задан — polling-режим)'}`);
+
+if (PUBLIC_URL.startsWith('https://')) {
   const webhookPath = `/webhook/${BOT_TOKEN}`;
   app.use(webhookPath, webhookCallback(bot, 'express'));
   mountWebapp();
   app.listen(PORT, async () => {
-    const webhookUrl = `${process.env.WEBHOOK_URL}${webhookPath}`;
-    await bot.api.setWebhook(webhookUrl);
-    console.log(`Bot running in webhook mode on port ${PORT}`);
-    console.log(`Webhook: ${webhookUrl}`);
+    const webhookUrl = `${PUBLIC_URL}${webhookPath}`;
+    try {
+      await bot.api.setWebhook(webhookUrl);
+      console.log(`Bot running in webhook mode on port ${PORT}`);
+      console.log(`Webhook: ${webhookUrl}`);
+    } catch (err) {
+      console.error('setWebhook failed:', err);
+    }
   });
 } else {
   mountWebapp();
