@@ -1,0 +1,40 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="38%" r="65%">
+      <stop offset="0%" stop-color="#34d399" stop-opacity="0.22"/>
+      <stop offset="60%" stop-color="#22d3ee" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#0a0a0f" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="rounded">
+      <rect width="512" height="512" rx="112"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#rounded)">
+    <!-- base -->
+    <rect width="512" height="512" fill="#0a0a0f"/>
+    <rect width="512" height="512" fill="url(#glow)"/>
+
+    <!-- ambient blobs -->
+    <circle cx="430" cy="80" r="150" fill="#34d399" opacity="0.10"/>
+    <circle cx="60" cy="450" r="160" fill="#22d3ee" opacity="0.08"/>
+
+    <!-- inner gradient ring -->
+    <rect x="14" y="14" width="484" height="484" rx="100" fill="none" stroke="url(#accent)" stroke-width="10" opacity="0.85"/>
+
+    <!-- chef hat (scaled lucide path, 24 -> 312px, centered) -->
+    <g transform="translate(100 92) scale(13)" fill="none" stroke="url(#accent)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17 21a1 1 0 0 0 1-1v-5.35c0-.457.316-.844.727-1.041a4 4 0 0 0-2.134-7.589 5 5 0 0 0-9.186 0 4 4 0 0 0-2.134 7.588c.411.198.727.585.727 1.041V20a1 1 0 0 0 1 1Z"/>
+      <path d="M6 17h12"/>
+    </g>
+
+    <!-- sparkle -->
+    <g transform="translate(366 96) scale(2.6)" fill="none" stroke="#22d3ee" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.95">
+      <path d="m12 3 1.9 5.7a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/>
+    </g>
+  </g>
+</svg>

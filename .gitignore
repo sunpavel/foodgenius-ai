@@ -1,0 +1,17 @@
+# Secrets — никогда не коммитим
+.env
+*/.env
+
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+*/dist/
+
+# User data (бот хранит профили пользователей)
+bot/user_data/
+
+# OS / editor
+.DS_Store
+*.log
