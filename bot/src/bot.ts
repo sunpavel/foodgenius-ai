@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import fs from 'fs';
+import path from 'path';
 import { Bot, webhookCallback } from 'grammy';
 import express from 'express';
 import cors from 'cors';
@@ -45,9 +47,22 @@ app.use('/api', createRouter());
 
 const PORT = Number(process.env.PORT ?? 3000);
 
+// Статика Mini App: в продакшене webapp собирается в ../public (см. Dockerfile)
+function mountWebapp() {
+  const publicDir = process.env.PUBLIC_DIR ?? path.resolve(__dirname, '..', 'public');
+  if (!fs.existsSync(publicDir)) return;
+  app.use(express.static(publicDir));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/webhook')) return next();
+    res.sendFile(path.join(publicDir, 'index.html'));
+  });
+  console.log(`Serving Mini App from ${publicDir}`);
+}
+
 if (process.env.NODE_ENV === 'production' && process.env.WEBHOOK_URL) {
   const webhookPath = `/webhook/${BOT_TOKEN}`;
   app.use(webhookPath, webhookCallback(bot, 'express'));
+  mountWebapp();
   app.listen(PORT, async () => {
     const webhookUrl = `${process.env.WEBHOOK_URL}${webhookPath}`;
     await bot.api.setWebhook(webhookUrl);
@@ -55,6 +70,7 @@ if (process.env.NODE_ENV === 'production' && process.env.WEBHOOK_URL) {
     console.log(`Webhook: ${webhookUrl}`);
   });
 } else {
+  mountWebapp();
   app.listen(PORT, () => {
     console.log(`API server running on http://localhost:${PORT}`);
   });
