@@ -4,6 +4,10 @@ export interface UserPreferences {
   cookingFrequency: 'daily' | 'few_times_week' | 'weekends';
   cuisinePreferences: string[];
   budgetLevel: 'low' | 'medium' | 'high';
+  // Спорт и активность — влияют на калорийность и долю белка в плане
+  activityLevel?: 'none' | 'light' | 'medium' | 'high';
+  sports?: string[];
+  trainingsPerWeek?: number;
 }
 
 export interface Meal {

@@ -161,7 +161,6 @@ function MealCard({ label, tint, meal, delay }: { label: string; tint: string; m
 
 export default function CalendarPage() {
   const [plan, setPlan] = useState<MealPlan | null>(null);
-  const [isDemo, setIsDemo] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<string>(JS_TO_KEY[new Date().getDay()]);
   const { getHeaders, getQueryUserId } = useTelegram();
@@ -170,7 +169,7 @@ export default function CalendarPage() {
     fetch(`/api/user/meal-plan${getQueryUserId()}`, { headers: getHeaders() })
       .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
       .then(setPlan)
-      .catch(() => { setPlan(DEMO_PLAN); setIsDemo(true); })
+      .catch(() => setPlan(DEMO_PLAN))
       .finally(() => setLoading(false));
   }, []);
 
@@ -202,21 +201,9 @@ export default function CalendarPage() {
     <div style={{ padding: '20px 16px 0' }}>
       {/* Hero header */}
       <div style={{ marginBottom: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>
-            Меню <span className="gradient-text">на неделю</span>
-          </h1>
-          {isDemo && (
-            <span style={{
-              fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-              color: 'var(--amber)', background: 'rgba(251,191,36,0.12)',
-              border: '1px solid rgba(251,191,36,0.25)',
-              padding: '4px 10px', borderRadius: 9,
-            }}>
-              ДЕМО
-            </span>
-          )}
-        </div>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>
+          Меню <span className="gradient-text">на неделю</span>
+        </h1>
 
         {stats && (
           <div className="stat-animate" style={{ display: 'flex', gap: 16, marginTop: 8, color: 'var(--muted)', fontSize: 13, fontWeight: 500 }}>

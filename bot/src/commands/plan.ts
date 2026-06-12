@@ -19,7 +19,8 @@ export async function planCommand(ctx: Context) {
   const thinking = await ctx.reply('🧠 Создаю персональный план питания...\n\nЭто займёт ~20 секунд ⏳');
 
   try {
-    const mealPlan = await generateMealPlan(userData.preferences);
+    // Передаём прошлый план, чтобы новый не повторял те же блюда
+    const mealPlan = await generateMealPlan(userData.preferences, userData.mealPlan);
 
     await saveUserData(userId, { mealPlan });
 

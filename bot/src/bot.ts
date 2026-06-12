@@ -5,6 +5,7 @@ import { Bot, webhookCallback } from 'grammy';
 import express from 'express';
 import cors from 'cors';
 import { startCommand } from './commands/start';
+import { appCommand } from './commands/app';
 import { planCommand } from './commands/plan';
 import { shopCommand } from './commands/shop';
 import { cookCommand } from './commands/cook';
@@ -22,7 +23,8 @@ const bot = new Bot(BOT_TOKEN);
 // Верификация для каталога appss.pro
 bot.command('appss_verify', (ctx) => ctx.reply('appss_6d4187'));
 
-// Commands (per spec: /start, /plan, /shop, /cook, /adjust)
+// Commands (per spec: /start, /plan, /shop, /cook, /adjust + /app)
+bot.command('app', appCommand);
 bot.command('start', startCommand);
 bot.command('plan', planCommand);
 bot.command('shop', shopCommand);

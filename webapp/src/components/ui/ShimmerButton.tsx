@@ -12,11 +12,11 @@ interface ShimmerButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export function ShimmerButton({
   children,
-  shimmerColor = '#ffffff',
-  shimmerSize = '0.05em',
-  borderRadius = '14px',
+  shimmerColor = '#34d399',
+  shimmerSize = '8%',
+  borderRadius = '16px',
   shimmerDuration = '3s',
-  background = 'var(--tg-theme-button-color, #2481cc)',
+  background = 'var(--bg-elev, #161620)',
   className = '',
   style,
   ...props

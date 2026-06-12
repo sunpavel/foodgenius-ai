@@ -5,13 +5,21 @@ import { ShimmerButton } from '../components/ui/ShimmerButton';
 import { AnimatedShinyText } from '../components/ui/AnimatedShinyText';
 import {
   UsersIcon, ClockIcon, WalletIcon, LeafIcon, SparklesIcon,
-  PlusIcon, MinusIcon, CheckIcon,
+  PlusIcon, MinusIcon, CheckIcon, FlameIcon,
 } from '../components/ui/Icon';
 import { useTelegram } from '../hooks/useTelegram';
 import { UserPreferences } from '../types';
 
 const DIETARY = ['Вегетарианство', 'Веганство', 'Без глютена', 'Без молочных', 'Кето', 'Без морепродуктов', 'Без орехов'];
 const CUISINES = ['Русская', 'Итальянская', 'Азиатская', 'Средиземноморская', 'Мексиканская', 'Грузинская', 'Любые'];
+const SPORTS = ['Силовые', 'Бег', 'Фитнес', 'Плавание', 'Вело', 'Йога', 'Единоборства', 'Игровые виды'];
+
+const ACTIVITY = [
+  { v: 'none',   l: 'Не занимаюсь',  hint: 'Обычное питание' },
+  { v: 'light',  l: 'Лёгкая',        hint: '1–2 тренировки, прогулки' },
+  { v: 'medium', l: 'Средняя',       hint: '3–4 тренировки в неделю' },
+  { v: 'high',   l: 'Высокая',       hint: '5+ тренировок, серьёзные нагрузки' },
+] as const;
 
 const FREQUENCY = [
   { v: 'daily',          l: 'Каждый день',       hint: '21 блюдо в неделю' },
@@ -31,6 +39,9 @@ const DEFAULT: UserPreferences = {
   cookingFrequency: 'few_times_week',
   cuisinePreferences: [],
   budgetLevel: 'medium',
+  activityLevel: 'none',
+  sports: [],
+  trainingsPerWeek: 3,
 };
 
 function toggle<T>(arr: T[], val: T): T[] {
@@ -183,6 +194,96 @@ export default function SetupPage() {
         </div>
       </Block>
 
+      {/* Активность и спорт */}
+      <Block
+        icon={<FlameIcon size={15} />}
+        title="Активность и спорт"
+        footer="При нагрузках план получит больше белка и калорий под тренировки"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {ACTIVITY.map(({ v, l, hint }) => {
+            const active = prefs.activityLevel === v;
+            return (
+              <button
+                key={v}
+                onClick={() => setPrefs(p => ({ ...p, activityLevel: v }))}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12, width: '100%', height: 56,
+                  padding: '0 14px', borderRadius: 13, cursor: 'pointer', textAlign: 'left',
+                  border: active ? '1px solid var(--accent)' : '1px solid var(--card-border)',
+                  background: active ? 'rgba(52,211,153,0.10)' : 'rgba(255,255,255,0.02)',
+                  boxShadow: active ? '0 0 20px -6px var(--glow)' : 'none',
+                  transition: 'all 0.18s',
+                }}
+              >
+                <span style={{
+                  width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                  border: active ? 'none' : '1.5px solid var(--faint)',
+                  background: active ? 'var(--gradient)' : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#06241c',
+                }}>
+                  {active && <CheckIcon size={12} strokeWidth={3} />}
+                </span>
+                <span style={{ flex: 1 }}>
+                  <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: active ? 'var(--accent)' : 'var(--text)' }}>{l}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>{hint}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {prefs.activityLevel !== 'none' && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} style={{ overflow: 'hidden' }}>
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 8 }}>Чем занимаетесь</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {SPORTS.map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => setPrefs(p => ({ ...p, sports: toggle(p.sports, opt) }))}
+                    className={`chip ${prefs.sports.includes(opt) ? 'active' : ''}`}
+                  >{opt}</button>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
+                <span style={{ fontSize: 14, fontWeight: 600 }}>Тренировок в неделю</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <button
+                    onClick={() => setPrefs(p => ({ ...p, trainingsPerWeek: Math.max(1, p.trainingsPerWeek - 1) }))}
+                    className="glass-hover"
+                    style={{
+                      width: 36, height: 36, borderRadius: 12, cursor: 'pointer',
+                      border: '1px solid var(--card-border)', background: 'var(--card)', color: 'var(--text)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  ><MinusIcon size={15} /></button>
+                  <motion.span
+                    key={prefs.trainingsPerWeek}
+                    initial={{ scale: 1.3, opacity: 0.5 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="gradient-text"
+                    style={{ minWidth: 22, textAlign: 'center', fontWeight: 800, fontSize: 19 }}
+                  >
+                    {prefs.trainingsPerWeek}
+                  </motion.span>
+                  <button
+                    onClick={() => setPrefs(p => ({ ...p, trainingsPerWeek: Math.min(7, p.trainingsPerWeek + 1) }))}
+                    style={{
+                      width: 36, height: 36, borderRadius: 12, cursor: 'pointer', border: 'none',
+                      background: 'var(--gradient)', color: '#06241c',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      boxShadow: '0 4px 16px -4px var(--glow)',
+                    }}
+                  ><PlusIcon size={15} /></button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </Block>
+
       {/* Ограничения */}
       <Block icon={<LeafIcon size={15} />} title="Диетические ограничения" footer="Можно пропустить, если нет ограничений">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -221,6 +322,9 @@ export default function SetupPage() {
         </div>
         <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)' }}>
           {prefs.householdSize} чел. · {FREQUENCY.find(f => f.v === prefs.cookingFrequency)?.l} · {BUDGETS.find(b => b.v === prefs.budgetLevel)?.l} бюджет
+          {prefs.activityLevel !== 'none' && (
+            <><br />Спорт: {ACTIVITY.find(a => a.v === prefs.activityLevel)?.l.toLowerCase()} активность, {prefs.trainingsPerWeek} трен./нед{prefs.sports.length > 0 && ` (${prefs.sports.join(', ').toLowerCase()})`} — план с упором на белок</>
+          )}
           {prefs.dietaryRestrictions.length > 0 && <><br />Без: {prefs.dietaryRestrictions.join(', ').toLowerCase()}</>}
           {prefs.cuisinePreferences.length > 0 && <><br />Кухни: {prefs.cuisinePreferences.join(', ')}</>}
         </div>

@@ -15,7 +15,6 @@ const CATS = [
 
 export default function ShoppingPage() {
   const [plan, setPlan] = useState<MealPlan | null>(null);
-  const [isDemo, setIsDemo] = useState(false);
   const [loading, setLoading] = useState(true);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const firedRef = useRef(false);
@@ -26,7 +25,7 @@ export default function ShoppingPage() {
     fetch(`/api/user/meal-plan${getQueryUserId()}`, { headers: getHeaders() })
       .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
       .then(setPlan)
-      .catch(() => { setPlan(DEMO_PLAN); setIsDemo(true); })
+      .catch(() => setPlan(DEMO_PLAN))
       .finally(() => setLoading(false));
   }, []);
 
@@ -70,21 +69,9 @@ export default function ShoppingPage() {
   return (
     <div style={{ padding: '20px 16px 0' }}>
       {/* Hero header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>
-          Список <span className="gradient-text">покупок</span>
-        </h1>
-        {isDemo && (
-          <span style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-            color: 'var(--amber)', background: 'rgba(251,191,36,0.12)',
-            border: '1px solid rgba(251,191,36,0.25)',
-            padding: '4px 10px', borderRadius: 9,
-          }}>
-            ДЕМО
-          </span>
-        )}
-      </div>
+      <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 14 }}>
+        Список <span className="gradient-text">покупок</span>
+      </h1>
 
       {/* Progress card */}
       <div className="glass" style={{ padding: 16, marginBottom: 16 }}>
