@@ -18,14 +18,15 @@ export default function ShoppingPage() {
   const [loading, setLoading] = useState(true);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const firedRef = useRef(false);
-  const { getHeaders, getQueryUserId } = useTelegram();
+  const { initData, getHeaders, getQueryUserId } = useTelegram();
   const { fire } = useConfetti();
 
   useEffect(() => {
     fetch(`/api/user/meal-plan${getQueryUserId()}`, { headers: getHeaders() })
       .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
       .then(setPlan)
-      .catch(() => setPlan(DEMO_PLAN))
+      // Демо-план только вне Telegram (предпросмотр в браузере)
+      .catch(() => setPlan(initData ? null : DEMO_PLAN))
       .finally(() => setLoading(false));
   }, []);
 
@@ -64,7 +65,17 @@ export default function ShoppingPage() {
     );
   }
 
-  if (!plan) return null;
+  if (!plan) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '70vh', padding: '0 32px', textAlign: 'center' }}>
+        <div style={{ fontSize: 56, marginBottom: 16 }}>🛒</div>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Списка пока нет</h2>
+        <p style={{ color: 'var(--muted)', fontSize: 14, lineHeight: 1.5, marginTop: 8 }}>
+          Список покупок собирается из плана питания — отправьте боту <span className="gradient-text" style={{ fontWeight: 700 }}>/plan</span>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: '20px 16px 0' }}>

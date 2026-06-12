@@ -5,6 +5,17 @@ import { validateTelegramWebAppData, extractUserIdFromInitData } from '../utils/
 export function createRouter(): Router {
   const router = Router();
 
+  // Диагностика конфигурации (без секретов)
+  router.get('/health', (_req: Request, res: Response) => {
+    res.json({
+      ok: true,
+      openaiKey: Boolean(process.env.OPENAI_API_KEY),
+      botToken: Boolean(process.env.BOT_TOKEN),
+      publicUrl: process.env.RAILWAY_PUBLIC_DOMAIN ?? process.env.WEBHOOK_URL ?? null,
+      uptime: Math.round(process.uptime()),
+    });
+  });
+
   function getUserId(req: Request): number | null {
     const auth = req.headers.authorization ?? '';
     const initData = auth.replace(/^tma\s+/, '');
