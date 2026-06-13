@@ -14,11 +14,18 @@ import { handleCallback } from './handlers/callbacks';
 import { handleInlineQuery } from './handlers/inline';
 import { createRouter } from './api/routes';
 import { publicUrl } from './utils/webapp';
+import { analyticsMiddleware, registerAdminCommands } from './admin';
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN is required in .env');
 
 const bot = new Bot(BOT_TOKEN);
+
+// Аналитика — первым, до всех остальных обработчиков
+bot.use(analyticsMiddleware);
+
+// Админ-команды /stats и /export (защищены adminOnly)
+registerAdminCommands(bot);
 
 // Верификация для каталога appss.pro
 bot.command('appss_verify', (ctx) => ctx.reply('appss_6d4187'));
