@@ -8,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@telegram-apps/analytics": "^1.6.4",
     "@telegram-apps/telegram-ui": "^2.1.13",
     "canvas-confetti": "^1.9.4",
     "framer-motion": "^12.40.0",
