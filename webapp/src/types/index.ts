@@ -1,3 +1,5 @@
+export type WeekDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
 export interface UserPreferences {
   householdSize: number;
   dietaryRestrictions: string[];
@@ -8,6 +10,23 @@ export interface UserPreferences {
   activityLevel: 'none' | 'light' | 'medium' | 'high';
   sports: string[];
   trainingsPerWeek: number;
+  // Цель питания и конкретные дни тренировок
+  goal?: 'lose_weight' | 'maintain' | 'gain_muscle';
+  goalKg?: number;
+  activityDays?: WeekDay[];
+}
+
+export interface UserData {
+  userId: number;
+  preferences?: UserPreferences;
+  mealPlan?: MealPlan;
+  lastActive?: string;
+  onboardingDone?: boolean;
+  likedDishes?: string[];
+  dislikedDishes?: string[];
+  referralCode?: string;
+  referredBy?: string;
+  dailyGoalKcal?: number;
 }
 
 export interface Meal {

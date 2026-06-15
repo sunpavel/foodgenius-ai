@@ -16,8 +16,15 @@ interface Analytics {
   days: Record<string, DayStats>;
 }
 
-// ── Внутренние load/save ─────────────────────────────────────
-function load(): Analytics {
+// ── Состояние в памяти + отложенная атомарная запись ─────────
+// Раньше каждый апдейт делал синхронную запись всего файла (блокировка
+// event loop). Теперь держим состояние в памяти, мутируем его, а на диск
+// сбрасываем с дебаунсом и атомарно (tmp + rename).
+let cache: Analytics | null = null;
+let flushTimer: NodeJS.Timeout | null = null;
+let dirty = false;
+
+function loadFromDisk(): Analytics {
   try {
     const raw = fs.readFileSync(FILE, 'utf-8');
     const data = JSON.parse(raw);
@@ -28,13 +35,42 @@ function load(): Analytics {
   return { days: {} };
 }
 
-function save(data: Analytics): void {
+function state(): Analytics {
+  if (!cache) {
+    cache = loadFromDisk();
+    ensureExitHook();
+  }
+  return cache;
+}
+
+function flush(): void {
+  if (!dirty || !cache) return;
   try {
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+    const tmp = `${FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(cache, null, 2));
+    fs.renameSync(tmp, FILE);
+    dirty = false;
   } catch (err) {
-    console.error('analytics save failed:', err);
+    console.error('analytics flush failed:', err);
   }
+}
+
+function scheduleFlush(): void {
+  dirty = true;
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => { flushTimer = null; flush(); }, 3000);
+  flushTimer.unref?.(); // таймер не должен мешать процессу завершиться
+}
+
+// Финальный сброс при остановке (Railway шлёт SIGTERM на редеплое)
+let hooked = false;
+function ensureExitHook(): void {
+  if (hooked) return;
+  hooked = true;
+  process.once('beforeExit', flush);
+  process.once('SIGINT', () => { flush(); process.exit(0); });
+  process.once('SIGTERM', () => { flush(); process.exit(0); });
 }
 
 // ── Время в МСК (UTC+3) ──────────────────────────────────────
@@ -70,19 +106,11 @@ function plural(n: number, forms: [string, string, string]): string {
 export function trackUser(userId: number): void {
   try {
     const { date, hour } = moscowParts();
-    const data = load();
-    const day = ensureDay(data, date);
-
-    let changed = false;
-    if (!day.users.includes(userId)) {
-      day.users.push(userId);
-      changed = true;
-    }
+    const day = ensureDay(state(), date);
+    if (!day.users.includes(userId)) day.users.push(userId);
     const hourKey = String(hour);
     day.hours[hourKey] = (day.hours[hourKey] ?? 0) + 1;
-    changed = true;
-
-    if (changed) save(data);
+    scheduleFlush();
   } catch (err) {
     console.error('trackUser failed:', err);
   }
@@ -92,11 +120,10 @@ export function trackUser(userId: number): void {
 export function trackEvent(_userId: number, event: string, store?: string): void {
   try {
     const { date } = moscowParts();
-    const data = load();
-    const day = ensureDay(data, date);
+    const day = ensureDay(state(), date);
     const key = store ? `${event}:${store}` : event;
     day.events[key] = (day.events[key] ?? 0) + 1;
-    save(data);
+    scheduleFlush();
   } catch (err) {
     console.error('trackEvent failed:', err);
   }
@@ -104,7 +131,7 @@ export function trackEvent(_userId: number, event: string, store?: string): void
 
 // ── Отчёты ───────────────────────────────────────────────────
 export function getStats(): string {
-  const data = load();
+  const data = state();
   const dates = Object.keys(data.days).sort(); // по возрастанию
 
   // Всего уникальных за всё время
@@ -159,7 +186,7 @@ export function getStats(): string {
 }
 
 export function buildCsv(): string {
-  const data = load();
+  const data = state();
   const dates = Object.keys(data.days).sort(); // по возрастанию для подсчёта новых
 
   const seen = new Set<number>();

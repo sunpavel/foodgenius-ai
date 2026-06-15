@@ -15,6 +15,7 @@ import { handleInlineQuery } from './handlers/inline';
 import { createRouter } from './api/routes';
 import { publicUrl } from './utils/webapp';
 import { analyticsMiddleware, registerAdminCommands } from './admin';
+import { registerCron } from './cron';
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN is required in .env');
@@ -41,6 +42,9 @@ bot.command('adjust', adjustCommand);
 // Callbacks + inline mode
 bot.on('callback_query:data', handleCallback);
 bot.on('inline_query', handleInlineQuery);
+
+// Cron: утренние уведомления и re-engagement
+registerCron(bot);
 
 // Глобальный обработчик — бот не должен падать из-за одной ошибки
 bot.catch((err) => {

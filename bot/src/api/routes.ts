@@ -1,7 +1,11 @@
 import { Router, Request, Response } from 'express';
-import { loadUserData, saveUserData } from '../data/user-storage';
+import {
+  loadUserData, saveUserData, updateLastActive,
+  calculateDailyKcal, generateReferralCode, getTodayFromPlan,
+} from '../data/user-storage';
 import { validateTelegramWebAppData, extractUserIdFromInitData } from '../utils/validation';
-import { generateMealPlan } from '../ai/meal-planner';
+import { generateMealPlan, replaceSingleMeal } from '../ai/meal-planner';
+import { UserPreferences, WeekDay } from '../types/user';
 
 export function createRouter(): Router {
   const router = Router();
@@ -30,17 +34,44 @@ export function createRouter(): Router {
     return null;
   }
 
+  // Единый резолвер userId: подпись Telegram или ?userId= в dev-режиме
+  function resolveUserId(req: Request): number | null {
+    const fromAuth = getUserId(req);
+    if (fromAuth) return fromAuth;
+    if (process.env.NODE_ENV !== 'production') {
+      return Number(req.query.userId) || Number(req.body?.userId) || null;
+    }
+    return null;
+  }
+
+  // Текущий день недели в коде mon..sun
+  function todayWeekDay(): WeekDay {
+    const map: WeekDay[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    return map[new Date().getDay()];
+  }
+
   // Save user preferences
   router.post('/user/preferences', async (req: Request, res: Response) => {
     try {
-      let userId = getUserId(req);
-      if (!userId && process.env.NODE_ENV !== 'production') {
-        userId = req.body.userId ?? 0;
-      }
+      const userId = resolveUserId(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-      await saveUserData(userId, { preferences: req.body });
-      res.json({ ok: true });
+      // Отделяем поля уровня UserData от полей предпочтений
+      const { onboardingDone, userId: _ignore, ...prefs } = req.body ?? {};
+      const preferences = prefs as UserPreferences;
+
+      const existing = await loadUserData(userId);
+      const referralCode = existing?.referralCode ?? generateReferralCode();
+      const dailyGoalKcal = calculateDailyKcal(preferences);
+
+      await saveUserData(userId, {
+        preferences,
+        referralCode,
+        dailyGoalKcal,
+        lastActive: new Date().toISOString(),
+        ...(onboardingDone !== undefined ? { onboardingDone: Boolean(onboardingDone) } : {}),
+      });
+      res.json({ ok: true, referralCode, dailyGoalKcal });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -49,10 +80,7 @@ export function createRouter(): Router {
   // Get user data
   router.get('/user/me', async (req: Request, res: Response) => {
     try {
-      let userId = getUserId(req);
-      if (!userId && process.env.NODE_ENV !== 'production') {
-        userId = Number(req.query.userId) || 0;
-      }
+      const userId = resolveUserId(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
       const data = await loadUserData(userId);
@@ -62,14 +90,23 @@ export function createRouter(): Router {
     }
   });
 
+  // Пинг активности — обновить lastActive при открытии Mini App
+  router.post('/user/ping', async (req: Request, res: Response) => {
+    try {
+      const userId = resolveUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      await updateLastActive(userId);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // Сгенерировать план прямо из Mini App (бесшовно, без команды /plan в чате)
   const generating = new Set<number>();
   router.post('/user/generate-plan', async (req: Request, res: Response) => {
     try {
-      let userId = getUserId(req);
-      if (!userId && process.env.NODE_ENV !== 'production') {
-        userId = Number(req.query.userId) || 0;
-      }
+      const userId = resolveUserId(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
       const data = await loadUserData(userId);
@@ -78,8 +115,8 @@ export function createRouter(): Router {
       if (generating.has(userId)) return res.status(429).json({ error: 'Already generating' });
       generating.add(userId);
       try {
-        const mealPlan = await generateMealPlan(data.preferences, data.mealPlan);
-        await saveUserData(userId, { mealPlan });
+        const mealPlan = await generateMealPlan(data.preferences, data.mealPlan, data.dislikedDishes ?? []);
+        await saveUserData(userId, { mealPlan, lastActive: new Date().toISOString() });
         res.json(mealPlan);
       } finally {
         generating.delete(userId);
@@ -93,15 +130,108 @@ export function createRouter(): Router {
   // Get meal plan
   router.get('/user/meal-plan', async (req: Request, res: Response) => {
     try {
-      let userId = getUserId(req);
-      if (!userId && process.env.NODE_ENV !== 'production') {
-        userId = Number(req.query.userId) || 0;
+      const userId = resolveUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      // lastActive обновляется через /user/ping при открытии приложения — здесь не дублируем
+      const data = await loadUserData(userId);
+      if (!data?.mealPlan) return res.status(404).json({ error: 'No meal plan' });
+      res.json(data.mealPlan);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Заменить одно блюдо. Body: { dayIndex: number, meal: 'breakfast'|'lunch'|'dinner' }
+  const replacing = new Set<number>();
+  router.post('/user/replace-meal', async (req: Request, res: Response) => {
+    let userId: number | null = null;
+    try {
+      userId = resolveUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const { dayIndex, meal } = req.body ?? {};
+      if (typeof dayIndex !== 'number' || !['breakfast', 'lunch', 'dinner'].includes(meal)) {
+        return res.status(400).json({ error: 'Bad request' });
       }
+
+      // Защита от спама заменами (= защита от лишних вызовов OpenAI)
+      if (replacing.has(userId)) return res.status(429).json({ error: 'Already replacing' });
+      replacing.add(userId);
+
+      const data = await loadUserData(userId);
+      const dayPlan = data?.mealPlan?.days?.[dayIndex];
+      if (!data?.preferences || !data.mealPlan || !dayPlan) {
+        return res.status(404).json({ error: 'No plan/day' });
+      }
+
+      const newMeal = await replaceSingleMeal(
+        data.preferences, dayPlan, meal, data.dislikedDishes ?? [],
+      );
+      data.mealPlan.days[dayIndex][meal as 'breakfast' | 'lunch' | 'dinner'] = newMeal;
+      await saveUserData(userId, { mealPlan: data.mealPlan });
+      res.json(newMeal);
+    } catch (err) {
+      console.error('replace-meal error:', err);
+      res.status(500).json({ error: String(err) });
+    } finally {
+      if (userId) replacing.delete(userId);
+    }
+  });
+
+  // Лайк/дизлайк блюда. Body: { dishName: string, reaction: 'like'|'dislike' }
+  router.post('/user/react', async (req: Request, res: Response) => {
+    try {
+      const userId = resolveUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const { dishName, reaction } = req.body ?? {};
+      if (typeof dishName !== 'string' || !['like', 'dislike'].includes(reaction)) {
+        return res.status(400).json({ error: 'Bad request' });
+      }
+
+      const data = (await loadUserData(userId)) ?? { userId };
+      let liked = (data.likedDishes ?? []).filter((d) => d !== dishName);
+      let disliked = (data.dislikedDishes ?? []).filter((d) => d !== dishName);
+      if (reaction === 'like') liked = [...liked, dishName];
+      else disliked = [...disliked, dishName];
+
+      await saveUserData(userId, { likedDishes: liked, dislikedDishes: disliked });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Прогресс к цели на сегодня
+  router.get('/user/today-progress', async (req: Request, res: Response) => {
+    try {
+      const userId = resolveUserId(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
       const data = await loadUserData(userId);
       if (!data?.mealPlan) return res.status(404).json({ error: 'No meal plan' });
-      res.json(data.mealPlan);
+
+      const today = getTodayFromPlan(data.mealPlan);
+      const sum = (k: 'calories' | 'protein' | 'carbs' | 'fat') =>
+        today ? (today.breakfast[k] || 0) + (today.lunch[k] || 0) + (today.dinner[k] || 0) : 0;
+
+      const goal = data.preferences?.goal;
+      const progressText = goal === 'lose_weight'
+        ? 'Минус ~0.5 кг в неделю при таком меню'
+        : goal === 'gain_muscle'
+        ? 'Плюс ~0.5 кг мышц в неделю при таком рационе'
+        : 'Поддерживаем форму — сбалансированный день';
+
+      res.json({
+        goalKcal: data.dailyGoalKcal ?? (data.preferences ? calculateDailyKcal(data.preferences) : 2000),
+        todayKcal: sum('calories'),
+        totalProtein: sum('protein'),
+        totalCarbs: sum('carbs'),
+        totalFat: sum('fat'),
+        progressText,
+        isTrainingDay: Boolean(data.preferences?.activityDays?.includes(todayWeekDay())),
+      });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }

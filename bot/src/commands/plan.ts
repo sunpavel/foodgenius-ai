@@ -28,8 +28,8 @@ export async function planCommand(ctx: Context) {
   // иначе Telegram повторно шлёт ту же команду и генерации множатся.
   void (async () => {
     try {
-      // Передаём прошлый план, чтобы новый не повторял те же блюда
-      const mealPlan = await generateMealPlan(userData.preferences!, userData.mealPlan);
+      // Передаём прошлый план и нелюбимые блюда, чтобы новый их не повторял
+      const mealPlan = await generateMealPlan(userData.preferences!, userData.mealPlan, userData.dislikedDishes ?? []);
 
       await saveUserData(userId, { mealPlan });
 

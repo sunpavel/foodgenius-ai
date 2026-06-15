@@ -1,18 +1,18 @@
 import { Context } from 'grammy';
+import { loadUserData } from '../data/user-storage';
 
 export async function handleCallback(ctx: Context) {
   const data = ctx.callbackQuery?.data;
 
-  if (data === 'how_it_works') {
+  // Поделиться реферальной ссылкой
+  if (data?.startsWith('referral:')) {
     await ctx.answerCallbackQuery();
+    const userData = await loadUserData(ctx.from!.id);
+    const code = userData?.referralCode ?? '';
+    const botUsername = (await ctx.api.getMe()).username;
+    const link = `https://t.me/${botUsername}?start=ref_${code}`;
     await ctx.reply(
-      `📖 *Как работает FoodGenius AI?*\n\n` +
-      `1️⃣ *Настройте предпочтения* — семья, ограничения, кухни, бюджет\n` +
-      `2️⃣ *AI создаёт план* — недельное меню с рецептами за 30 секунд\n` +
-      `3️⃣ *Список покупок* — автоматически из плана, по категориям\n` +
-      `4️⃣ *Готовьте по подсказкам* — /cook покажет сегодняшнее меню\n\n` +
-      `Команды:\n/plan — новый план на неделю\n/cook — меню на сегодня\n/shop — список покупок\n/adjust — изменить план («/adjust замени ужин в среду»)`,
-      { parse_mode: 'Markdown' },
+      `Попробуй FoodGenius — AI составляет меню на неделю под твои цели и тренировки 🍽️\n\n${link}`,
     );
     return;
   }

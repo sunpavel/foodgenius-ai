@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useTelegram } from './hooks/useTelegram';
@@ -62,18 +62,44 @@ function GlassTabbar() {
   );
 }
 
+function Spinner() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+        style={{ width: 36, height: 36, borderRadius: '50%', border: '3px solid var(--card-border)', borderTopColor: 'var(--accent)' }} />
+    </div>
+  );
+}
+
 function AppShell() {
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+  const { getHeaders, getQueryUserId } = useTelegram();
+  const location = useLocation();
+
+  useEffect(() => {
+    // Пинг активности при каждом открытии
+    fetch(`/api/user/ping${getQueryUserId()}`, { method: 'POST', headers: getHeaders() }).catch(() => {});
+    // Загрузить профиль для проверки онбординга
+    fetch(`/api/user/me${getQueryUserId()}`, { headers: getHeaders() })
+      .then((r) => r.json())
+      .then((d) => setOnboardingDone(Boolean(d?.onboardingDone)))
+      .catch(() => setOnboardingDone(false));
+  }, []);
+
+  const showNav = location.pathname !== '/setup';
+  if (onboardingDone === null) return <Spinner />;
+
   return (
     <div className="app-bg" style={{ minHeight: '100vh', position: 'relative' }}>
-      <div style={{ position: 'relative', zIndex: 1, paddingBottom: 84 }}>
+      <div style={{ position: 'relative', zIndex: 1, paddingBottom: showNav ? 84 : 0 }}>
         <Routes>
-          <Route path="/"         element={<Navigate to="/calendar" replace />} />
+          <Route path="/" element={<Navigate to={onboardingDone ? '/calendar' : '/setup'} replace />} />
           <Route path="/setup"    element={<SetupPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/shopping" element={<ShoppingPage />} />
         </Routes>
       </div>
-      <GlassTabbar />
+      {showNav && <GlassTabbar />}
     </div>
   );
 }

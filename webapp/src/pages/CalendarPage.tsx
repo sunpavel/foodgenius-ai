@@ -32,10 +32,93 @@ const MEAL_META = [
   { key: 'dinner'    as const, label: 'Ужин',    tint: 'rgba(167, 139, 250, 0.14)' },
 ];
 
-function MealCard({ label, tint, meal, delay }: { label: string; tint: string; meal: Meal; delay: number }) {
+function TodayProgress() {
+  const [data, setData] = useState<{
+    goalKcal: number; todayKcal: number; totalProtein: number; totalCarbs: number; totalFat: number;
+    progressText: string; isTrainingDay: boolean;
+  } | null>(null);
   const [open, setOpen] = useState(false);
+  const { getHeaders, getQueryUserId } = useTelegram();
+
+  useEffect(() => {
+    fetch(`/api/user/today-progress${getQueryUserId()}`, { headers: getHeaders() })
+      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(setData)
+      .catch(() => {});
+  }, []);
+
+  if (!data) return null;
+  const pct = data.goalKcal ? Math.round((data.todayKcal / data.goalKcal) * 100) : 0;
+
+  return (
+    <motion.div className="glass glass-hover" onClick={() => setOpen((v) => !v)}
+      style={{ padding: '12px 16px', marginBottom: 14, cursor: 'pointer' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+        <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+          {data.isTrainingDay ? '💪 ' : ''}{data.progressText}
+        </span>
+        <span style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+          {data.todayKcal} / {data.goalKcal} ккал
+        </span>
+      </div>
+      <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)' }}>
+        <motion.div animate={{ width: `${Math.min(pct, 100)}%` }}
+          style={{ height: '100%', borderRadius: 2, background: 'var(--gradient)' }} />
+      </div>
+      <AnimatePresence>
+        {open && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
+            <div style={{ paddingTop: 12, display: 'flex', gap: 16, fontSize: 13, flexWrap: 'wrap' }}>
+              <span><span style={{ color: 'var(--accent)', fontWeight: 700 }}>Б</span> {data.totalProtein}г — как {Math.max(1, Math.round(data.totalProtein / 25))} куриных грудки</span>
+              <span><span style={{ color: 'var(--amber)', fontWeight: 700 }}>У</span> {data.totalCarbs}г — энергия дня</span>
+              <span><span style={{ color: 'var(--rose)', fontWeight: 700 }}>Ж</span> {data.totalFat}г</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function MealCard({ label, tint, meal, delay, dayIndex, mealKey, onReplace }: {
+  label: string; tint: string; meal: Meal; delay: number;
+  dayIndex: number; mealKey: 'breakfast' | 'lunch' | 'dinner';
+  onReplace: (mealKey: 'breakfast' | 'lunch' | 'dinner', newMeal: Meal) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [replacing, setReplacing] = useState(false);
+  const [reacted, setReacted] = useState<'like' | 'dislike' | null>(null);
+  const { tg, getHeaders, getQueryUserId } = useTelegram();
   const diff = meal.difficulty ? DIFFICULTY[meal.difficulty] : null;
   const hasRecipe = (meal.ingredients?.length || 0) > 0 || (meal.instructions?.length || 0) > 0;
+
+  async function react(reaction: 'like' | 'dislike') {
+    setReacted(reaction);
+    tg?.HapticFeedback?.impactOccurred('light');
+    await fetch(`/api/user/react${getQueryUserId()}`, {
+      method: 'POST', headers: getHeaders(),
+      body: JSON.stringify({ dishName: meal.name, reaction }),
+    }).catch(() => {});
+  }
+
+  async function handleReplace() {
+    setReplacing(true);
+    tg?.HapticFeedback?.impactOccurred('medium');
+    try {
+      const r = await fetch(`/api/user/replace-meal${getQueryUserId()}`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ dayIndex, meal: mealKey }),
+      });
+      if (r.ok) {
+        onReplace(mealKey, await r.json());
+        tg?.HapticFeedback?.notificationOccurred('success');
+      }
+    } catch {
+      // тихо игнорируем
+    } finally {
+      setReplacing(false);
+    }
+  }
 
   return (
     <motion.div
@@ -151,6 +234,18 @@ function MealCard({ label, tint, meal, delay }: { label: string; tint: string; m
                   ))}
                 </div>
               )}
+
+              {/* Действия: лайк / дизлайк / заменить */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => react('like')} className="btn btn-ghost"
+                  style={{ flex: 1, height: 40, fontSize: 15, opacity: reacted === 'like' ? 1 : 0.7, borderColor: reacted === 'like' ? 'var(--accent)' : undefined }}>👍</button>
+                <button onClick={() => react('dislike')} className="btn btn-ghost"
+                  style={{ flex: 1, height: 40, fontSize: 15, opacity: reacted === 'dislike' ? 1 : 0.7, borderColor: reacted === 'dislike' ? 'var(--rose)' : undefined }}>👎</button>
+                <button onClick={handleReplace} className="btn btn-ghost" disabled={replacing}
+                  style={{ flex: 2, height: 40, fontSize: 13 }}>
+                  {replacing ? '⏳ Заменяю...' : '↻ Заменить'}
+                </button>
+              </div>
             </div>
           </motion.div>
         )}
@@ -229,8 +324,17 @@ export default function CalendarPage() {
   }
 
   const todayKey = JS_TO_KEY[new Date().getDay()];
-  const currentDay: DayPlan | undefined = plan.days.find((d) => d.day === selectedDay) ?? plan.days[0];
+  const currentDayIndex = Math.max(0, plan.days.findIndex((d) => d.day === selectedDay));
+  const currentDay: DayPlan | undefined = plan.days[currentDayIndex] ?? plan.days[0];
   const stats = plan.weeklyStats;
+
+  function replaceMealInPlan(mealKey: 'breakfast' | 'lunch' | 'dinner', newMeal: Meal) {
+    setPlan((prev) => {
+      if (!prev) return prev;
+      const days = prev.days.map((d, i) => (i === currentDayIndex ? { ...d, [mealKey]: newMeal } : d));
+      return { ...prev, days };
+    });
+  }
   const dayCalories = currentDay
     ? (currentDay.breakfast.calories || 0) + (currentDay.lunch.calories || 0) + (currentDay.dinner.calories || 0)
     : 0;
@@ -250,6 +354,9 @@ export default function CalendarPage() {
           </div>
         )}
       </div>
+
+      {/* Прогресс к цели на сегодня */}
+      <TodayProgress />
 
       {/* Day pills — равные, по центру */}
       <div className="seg" style={{ marginBottom: 18 }}>
@@ -306,7 +413,8 @@ export default function CalendarPage() {
             </div>
 
             {MEAL_META.map(({ key, label, tint }, i) => (
-              <MealCard key={key} label={label} tint={tint} meal={currentDay[key]} delay={i * 0.06} />
+              <MealCard key={`${selectedDay}-${key}`} label={label} tint={tint} meal={currentDay[key]} delay={i * 0.06}
+                dayIndex={currentDayIndex} mealKey={key} onReplace={replaceMealInPlan} />
             ))}
 
             <p style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 12, margin: '4px 0 16px' }}>
