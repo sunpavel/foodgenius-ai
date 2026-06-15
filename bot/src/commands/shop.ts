@@ -1,6 +1,6 @@
 import { Context } from 'grammy';
 import { webAppButton } from '../utils/webapp';
-import { loadUserData } from '../data/user-storage';
+import { loadUserData, getTodayFromPlan } from '../data/user-storage';
 
 export async function shopCommand(ctx: Context) {
   const userId = ctx.from!.id;
@@ -11,15 +11,30 @@ export async function shopCommand(ctx: Context) {
     return;
   }
 
-  const list = userData.mealPlan.shoppingList;
-  const total = [
-    ...list.produce,
-    ...list.dairy,
-    ...list.meat,
-    ...list.pantry,
-  ].length;
+  // Покупки на сегодня — ингредиенты блюд текущего дня
+  const today = getTodayFromPlan(userData.mealPlan);
+  const todayItems = today
+    ? Array.from(new Set([
+        ...(today.breakfast.ingredients ?? []),
+        ...(today.lunch.ingredients ?? []),
+        ...(today.dinner.ingredients ?? []),
+      ]))
+    : [];
 
-  await ctx.reply(`🛒 *Список покупок* (${total} позиций)\n\n🥬 Овощи/фрукты: ${list.produce.length}\n🥛 Молочное: ${list.dairy.length}\n🥩 Мясо/рыба: ${list.meat.length}\n🫙 Бакалея: ${list.pantry.length}`, {
+  const list = userData.mealPlan.shoppingList;
+  const weekTotal = list.produce.length + list.dairy.length + list.meat.length + list.pantry.length;
+
+  let msg: string;
+  if (todayItems.length) {
+    msg = `🛒 *Покупки на сегодня* (${todayItems.length})\n\n` +
+      todayItems.map((i) => `• ${i}`).join('\n') +
+      `\n\n_Полный список на неделю: ${weekTotal} позиций_`;
+  } else {
+    msg = `🛒 *Список покупок на неделю* — ${weekTotal} позиций\n\n` +
+      `🥬 Овощи/фрукты: ${list.produce.length}\n🥛 Молочное: ${list.dairy.length}\n🥩 Мясо/рыба: ${list.meat.length}\n🫙 Бакалея: ${list.pantry.length}`;
+  }
+
+  await ctx.reply(msg, {
     parse_mode: 'Markdown',
     reply_markup: {
       inline_keyboard: [[webAppButton('📋 Открыть список', '/shopping')]],
