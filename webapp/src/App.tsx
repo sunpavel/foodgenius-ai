@@ -103,7 +103,9 @@ function AppShell() {
     }
   }, [location.pathname, tg, navigate]);
 
-  const showNav = location.pathname !== '/setup';
+  // Таб-бар скрываем только в мастере первичного онбординга; у онбордированных
+  // «Профиль» — обычный экран, навигация должна оставаться (чтобы можно было уйти).
+  const showNav = location.pathname !== '/setup' || onboardingDone === true;
   if (onboardingDone === null) return <Spinner />;
 
   return (
