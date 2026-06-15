@@ -39,6 +39,10 @@ bot.command('shop', shopCommand);
 bot.command('cook', cookCommand);
 bot.command('adjust', adjustCommand);
 
+// Постоянные нижние кнопки (reply-клавиатура из /start)
+bot.hears('🍳 Меню', cookCommand);
+bot.hears('🛒 Покупки', shopCommand);
+
 // Callbacks + inline mode
 bot.on('callback_query:data', handleCallback);
 bot.on('inline_query', handleInlineQuery);
