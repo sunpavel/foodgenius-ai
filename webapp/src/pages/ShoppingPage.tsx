@@ -36,7 +36,7 @@ export default function ShoppingPage() {
   const [tab, setTab] = useState<'today' | 'week'>('today');
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const firedRef = useRef(false);
-  const { tg, initData, getHeaders, getQueryUserId } = useTelegram();
+  const { tg, initData, getHeaders, getQueryUserId, shareToChat } = useTelegram();
   const { fire } = useConfetti();
   const navigate = useNavigate();
 
@@ -49,7 +49,11 @@ export default function ShoppingPage() {
   }, []);
 
   const totalItems = plan ? CATS.reduce((s, c) => s + plan.shoppingList[c.key].length, 0) : 0;
-  const checkedCount = checked.size;
+  // Недельный прогресс считаем только по ключам категорий, чтобы отметки на
+  // вкладке «сегодня» (ключи today:) его не искажали.
+  const checkedCount = plan
+    ? CATS.reduce((s, c) => s + plan.shoppingList[c.key].filter((it) => checked.has(`${c.key}:${it}`)).length, 0)
+    : 0;
   const progress = totalItems ? Math.round((checkedCount / totalItems) * 100) : 0;
 
   useEffect(() => {
@@ -102,16 +106,22 @@ export default function ShoppingPage() {
     return todayMeals.filter((m) => (m.ingredients ?? []).includes(item)).map((m) => m.name);
   }
 
-  function share() {
-    const text = buildShoppingText(plan!);
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text)
-        .then(() => tg?.showAlert('Список скопирован! Вставь в любой чат 📋'))
-        .catch(() => tg?.showAlert(text));
-    } else {
-      tg?.showAlert(text);
-    }
+  async function refLink(): Promise<string> {
+    let code = '';
+    try {
+      const r = await fetch(`/api/user/me${getQueryUserId()}`, { headers: getHeaders() });
+      if (r.ok) code = (await r.json())?.referralCode ?? '';
+    } catch { /* без кода — просто ссылка на бота */ }
+    return `https://t.me/foodgenius_ai_bot${code ? `?start=ref_${code}` : ''}`;
   }
+  async function doShare(text: string) {
+    tg?.HapticFeedback?.impactOccurred('light');
+    shareToChat(text, await refLink());
+  }
+  const shareWeek = () => doShare(buildShoppingText(plan!));
+  const shareToday = () => doShare(
+    `🛒 Покупки на сегодня — FoodGenius AI\n\n${todayIngredients.map((i) => `• ${i}`).join('\n')}\n\nСоставь меню и список под себя 👇`,
+  );
 
   return (
     <div style={{ padding: '20px 16px 0' }}>
@@ -131,19 +141,32 @@ export default function ShoppingPage() {
           {todayIngredients.length === 0 ? (
             <p style={{ color: 'var(--muted)', fontSize: 14, textAlign: 'center', padding: '24px 0' }}>На сегодня нет блюд в плане</p>
           ) : (
-            <div className="glass" style={{ overflow: 'hidden', marginBottom: 16 }}>
-              {todayIngredients.map((item, idx) => (
-                <button key={item} onClick={() => { const u = dishesWithIngredient(item); if (u.length) tg?.showAlert(`Используется в:\n${u.join('\n')}`); }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '12px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', borderTop: idx > 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, color: 'var(--text)' }}>{item}</span>
-                </button>
-              ))}
-            </div>
+            <>
+              <button className="btn btn-ghost" style={{ marginBottom: 12 }} onClick={shareToday}>📤 Поделиться списком</button>
+              <div className="glass" style={{ overflow: 'hidden', marginBottom: 16 }}>
+                {todayIngredients.map((item, idx) => {
+                  const id = `today:${item}`;
+                  const done = checked.has(id);
+                  const dishes = dishesWithIngredient(item);
+                  return (
+                    <button key={item} onClick={() => toggle(id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '12px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', borderTop: idx > 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                      <motion.span animate={{ scale: done ? [1, 1.18, 1] : 1 }} transition={{ duration: 0.2 }}
+                        style={{ width: 24, height: 24, borderRadius: 8, flexShrink: 0, border: done ? 'none' : '1.5px solid #34d39955', background: done ? '#34d399' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0a0a0f', boxShadow: done ? '0 0 10px #34d39966' : 'none', transition: 'background 0.2s, border 0.2s' }}>
+                        {done && <CheckIcon size={14} strokeWidth={3} />}
+                      </motion.span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 14, color: done ? 'var(--faint)' : 'var(--text)', textDecoration: done ? 'line-through' : 'none', transition: 'color 0.2s' }}>{item}</span>
+                        {dishes.length > 0 && (
+                          <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>в: {dishes.join(', ')}</span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
-          <p style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 12, marginBottom: 16 }}>
-            Нажмите на продукт, чтобы увидеть в каком он блюде
-          </p>
         </>
       )}
 
@@ -172,7 +195,7 @@ export default function ShoppingPage() {
           </div>
 
           {/* Поделиться */}
-          <button className="btn btn-ghost" style={{ marginBottom: 16 }} onClick={share}>📤 Поделиться списком</button>
+          <button className="btn btn-ghost" style={{ marginBottom: 16 }} onClick={shareWeek}>📤 Поделиться списком</button>
 
           {/* Completion banner */}
           {progress === 100 && (

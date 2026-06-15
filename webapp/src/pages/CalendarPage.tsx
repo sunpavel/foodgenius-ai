@@ -308,8 +308,28 @@ export default function CalendarPage() {
   const [plan, setPlan] = useState<MealPlan | null>(null);
   const [phase, setPhase] = useState<Phase>('loading');
   const [selectedDay, setSelectedDay] = useState<string>(JS_TO_KEY[new Date().getDay()]);
-  const { tg, initData, getHeaders, getQueryUserId } = useTelegram();
+  const { tg, initData, getHeaders, getQueryUserId, shareToChat } = useTelegram();
   const navigate = useNavigate();
+
+  // Поделиться меню дня в чат Telegram + реферальная ссылка на бота (рост)
+  async function shareMenu(day: DayPlan) {
+    tg?.HapticFeedback?.impactOccurred('light');
+    let code = '';
+    try {
+      const r = await fetch(`/api/user/me${getQueryUserId()}`, { headers: getHeaders() });
+      if (r.ok) code = (await r.json())?.referralCode ?? '';
+    } catch { /* без кода — просто ссылка на бота */ }
+    const dayName = DAY_FULL[day.day] ?? day.day;
+    const kcal = (day.breakfast.calories || 0) + (day.lunch.calories || 0) + (day.dinner.calories || 0);
+    const text =
+      `🍽 Моё меню (${dayName}) — FoodGenius AI\n\n` +
+      `${day.breakfast.emoji ?? '☀️'} Завтрак: ${day.breakfast.name}\n` +
+      `${day.lunch.emoji ?? '🌤'} Обед: ${day.lunch.name}\n` +
+      `${day.dinner.emoji ?? '🌙'} Ужин: ${day.dinner.name}\n\n` +
+      `🔥 ${kcal} ккал за день\n\nСоставь своё меню под цель 👇`;
+    const url = `https://t.me/foodgenius_ai_bot${code ? `?start=ref_${code}` : ''}`;
+    shareToChat(text, url);
+  }
 
   // Поллинг статуса фоновой генерации
   function pollStatus() {
@@ -479,11 +499,17 @@ export default function CalendarPage() {
                 dayIndex={currentDayIndex} mealKey={key} onReplace={replaceMealInPlan} />
             ))}
 
-            {/* Быстрый переход к покупкам на сегодня — без лишних кликов по табам */}
-            <button className="btn btn-ghost" style={{ marginTop: 4 }}
-              onClick={() => { tg?.HapticFeedback?.impactOccurred('light'); navigate('/shopping'); }}>
-              🛒 Список покупок на сегодня
-            </button>
+            {/* Быстрые действия по дню: покупки и шеринг — без лишних кликов */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <button className="btn btn-ghost" style={{ flex: 1, fontSize: 13 }}
+                onClick={() => { tg?.HapticFeedback?.impactOccurred('light'); navigate('/shopping'); }}>
+                🛒 Покупки
+              </button>
+              <button className="btn btn-ghost" style={{ flex: 1, fontSize: 13 }}
+                onClick={() => currentDay && shareMenu(currentDay)}>
+                📤 Поделиться
+              </button>
+            </div>
 
             <p style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 12, margin: '12px 0 16px' }}>
               Нажмите на блюдо, чтобы открыть рецепт

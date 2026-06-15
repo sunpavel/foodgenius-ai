@@ -13,6 +13,7 @@ declare global {
         themeParams: Record<string, string>;
         setHeaderColor?: (color: string) => void;
         setBackgroundColor?: (color: string) => void;
+        openTelegramLink?: (url: string) => void;
         MainButton: {
           text: string;
           setText: (text: string) => void;
@@ -59,5 +60,20 @@ export function useTelegram() {
     return user ? `?userId=${user.id}` : '?userId=0';
   }
 
-  return { tg, user, initData, getHeaders, getQueryUserId };
+  // Нативный шеринг в чат Telegram. text — сообщение, url — ссылка (на бота).
+  // Фолбэк вне Telegram — копирование в буфер.
+  function shareToChat(text: string, url: string): void {
+    const link = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+    if (tg?.openTelegramLink) {
+      tg.openTelegramLink(link);
+    } else if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(`${text}\n${url}`)
+        .then(() => tg?.showAlert?.('Скопировано! Вставьте в любой чат 📋'))
+        .catch(() => { window.open(link, '_blank'); });
+    } else {
+      window.open(link, '_blank');
+    }
+  }
+
+  return { tg, user, initData, getHeaders, getQueryUserId, shareToChat };
 }
