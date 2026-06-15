@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { NumberTicker } from '../components/ui/NumberTicker';
 import { BorderBeam } from '../components/ui/BorderBeam';
@@ -93,11 +94,13 @@ function MealCard({ label, tint, meal, delay, dayIndex, mealKey, onReplace }: {
   const hasRecipe = (meal.ingredients?.length || 0) > 0 || (meal.instructions?.length || 0) > 0;
 
   async function react(reaction: 'like' | 'dislike') {
-    setReacted(reaction);
+    // Повторный тап по той же реакции — снимаем её
+    const next = reacted === reaction ? null : reaction;
+    setReacted(next);
     tg?.HapticFeedback?.impactOccurred('light');
     await fetch(`/api/user/react${getQueryUserId()}`, {
       method: 'POST', headers: getHeaders(),
-      body: JSON.stringify({ dishName: meal.name, reaction }),
+      body: JSON.stringify({ dishName: meal.name, reaction: next ?? 'none' }),
     }).catch(() => {});
   }
 
@@ -306,6 +309,7 @@ export default function CalendarPage() {
   const [phase, setPhase] = useState<Phase>('loading');
   const [selectedDay, setSelectedDay] = useState<string>(JS_TO_KEY[new Date().getDay()]);
   const { tg, initData, getHeaders, getQueryUserId } = useTelegram();
+  const navigate = useNavigate();
 
   // Поллинг статуса фоновой генерации
   function pollStatus() {
@@ -381,7 +385,14 @@ export default function CalendarPage() {
   const todayKey = JS_TO_KEY[new Date().getDay()];
   const currentDayIndex = Math.max(0, plan.days.findIndex((d) => d.day === selectedDay));
   const currentDay: DayPlan | undefined = plan.days[currentDayIndex] ?? plan.days[0];
-  const stats = plan.weeklyStats;
+
+  // Калории считаем из реальных блюд, а не из weeklyStats модели (LLM плохо складывает
+  // числа). Так шапка, дневная строка и прогресс согласованы и пересчитываются при замене.
+  const dayKcal = (d: DayPlan) => (d.breakfast.calories || 0) + (d.lunch.calories || 0) + (d.dinner.calories || 0);
+  const totalMeals = plan.days.length * 3;
+  const avgCalories = plan.days.length
+    ? Math.round(plan.days.reduce((s, d) => s + dayKcal(d), 0) / plan.days.length)
+    : 0;
 
   function replaceMealInPlan(mealKey: 'breakfast' | 'lunch' | 'dinner', newMeal: Meal) {
     setPlan((prev) => {
@@ -390,9 +401,7 @@ export default function CalendarPage() {
       return { ...prev, days };
     });
   }
-  const dayCalories = currentDay
-    ? (currentDay.breakfast.calories || 0) + (currentDay.lunch.calories || 0) + (currentDay.dinner.calories || 0)
-    : 0;
+  const dayCalories = currentDay ? dayKcal(currentDay) : 0;
 
   return (
     <div style={{ padding: '20px 16px 0' }}>
@@ -402,12 +411,10 @@ export default function CalendarPage() {
           Меню <span className="gradient-text">на неделю</span>
         </h1>
 
-        {stats && (
-          <div className="stat-animate" style={{ display: 'flex', gap: 16, marginTop: 8, color: 'var(--muted)', fontSize: 13, fontWeight: 500 }}>
-            <span><NumberTicker value={stats.totalMeals} className="gradient-text" /> блюд</span>
-            <span>~<NumberTicker value={stats.avgCalories} className="gradient-text" /> ккал/день</span>
-          </div>
-        )}
+        <div className="stat-animate" style={{ display: 'flex', gap: 16, marginTop: 8, color: 'var(--muted)', fontSize: 13, fontWeight: 500 }}>
+          <span><NumberTicker value={totalMeals} className="gradient-text" /> блюд</span>
+          <span>~<NumberTicker value={avgCalories} className="gradient-text" /> ккал/день</span>
+        </div>
       </div>
 
       {/* Прогресс к цели на сегодня */}
@@ -472,7 +479,13 @@ export default function CalendarPage() {
                 dayIndex={currentDayIndex} mealKey={key} onReplace={replaceMealInPlan} />
             ))}
 
-            <p style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 12, margin: '4px 0 16px' }}>
+            {/* Быстрый переход к покупкам на сегодня — без лишних кликов по табам */}
+            <button className="btn btn-ghost" style={{ marginTop: 4 }}
+              onClick={() => { tg?.HapticFeedback?.impactOccurred('light'); navigate('/shopping'); }}>
+              🛒 Список покупок на сегодня
+            </button>
+
+            <p style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 12, margin: '12px 0 16px' }}>
               Нажмите на блюдо, чтобы открыть рецепт
             </p>
           </motion.div>

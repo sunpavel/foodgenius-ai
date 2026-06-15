@@ -208,15 +208,16 @@ export function createRouter(): Router {
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
       const { dishName, reaction } = req.body ?? {};
-      if (typeof dishName !== 'string' || !['like', 'dislike'].includes(reaction)) {
+      if (typeof dishName !== 'string' || !['like', 'dislike', 'none'].includes(reaction)) {
         return res.status(400).json({ error: 'Bad request' });
       }
 
+      // 'none' — снять реакцию: убираем из обоих списков
       const data = (await loadUserData(userId)) ?? { userId };
       let liked = (data.likedDishes ?? []).filter((d) => d !== dishName);
       let disliked = (data.dislikedDishes ?? []).filter((d) => d !== dishName);
       if (reaction === 'like') liked = [...liked, dishName];
-      else disliked = [...disliked, dishName];
+      else if (reaction === 'dislike') disliked = [...disliked, dishName];
 
       await saveUserData(userId, { likedDishes: liked, dislikedDishes: disliked });
       res.json({ ok: true });
