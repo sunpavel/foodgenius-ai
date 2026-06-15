@@ -10,8 +10,8 @@
   --card-hover: rgba(255, 255, 255, 0.07);
   --card-border: rgba(255, 255, 255, 0.08);
   --text: #f2f2f7;
-  --muted: #8e8e9b;
-  --faint: #5b5b66;
+  --muted: #9a9aa6;
+  --faint: #7a7a86;
 
   --accent: #34d399;
   --accent-2: #22d3ee;
@@ -30,10 +30,14 @@
 
 html, body {
   margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* Не даём вертикальному оверскроллу триггерить drag-to-close в Telegram */
+  overscroll-behavior-y: contain;
 }
 
 * { box-sizing: border-box; }
@@ -135,17 +139,17 @@ button, a { -webkit-tap-highlight-color: transparent; font-family: inherit; }
   box-shadow: 0 0 20px -4px var(--glow), inset 0 0 12px rgba(52, 211, 153, 0.06);
 }
 
-/* Choice chips — uniform height, centered */
+/* Choice chips — uniform height, centered (тач-таргет ≥44px) */
 .chip {
-  height: 38px;
-  padding: 0 16px;
+  height: 44px;
+  padding: 0 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 19px;
+  border-radius: 22px;
   border: 1px solid var(--card-border);
   background: var(--card);
-  color: var(--muted);
+  color: var(--text);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;

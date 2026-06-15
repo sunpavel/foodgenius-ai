@@ -1,7 +1,6 @@
 import { useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShimmerButton } from '../components/ui/ShimmerButton';
 import {
   UsersIcon, WalletIcon, LeafIcon, FlameIcon,
   PlusIcon, MinusIcon, CheckIcon,
@@ -70,22 +69,13 @@ function StepTitle({ icon, children }: { icon: ReactNode; children: ReactNode })
   );
 }
 
-const GEN_STEPS = [
-  'Анализирую ваш профиль...',
-  'Подбираю блюда под цель...',
-  'Считаю КБЖУ на каждый день...',
-  'Собираю список покупок...',
-  'Почти готово...',
-];
-
-type Phase = 'idle' | 'saving' | 'generating' | 'done' | 'error';
+type Phase = 'idle' | 'saving' | 'error';
 
 export default function SetupPage() {
   const [step, setStep] = useState(0);
   const [prefs, setPrefs] = useState<UserPreferences>(DEFAULT);
   const [customDiet, setCustomDiet] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
-  const [genStep, setGenStep] = useState(0);
   const { tg, getHeaders, getQueryUserId } = useTelegram();
   const navigate = useNavigate();
 
@@ -96,16 +86,25 @@ export default function SetupPage() {
       .catch(() => {});
   }, []);
 
+  // Нативная кнопка «Назад» Telegram внутри степпера: ведёт на предыдущий шаг
   useEffect(() => {
-    if (phase !== 'generating') return;
-    const t = setInterval(() => setGenStep((s) => (s + 1) % GEN_STEPS.length), 6000);
-    return () => clearInterval(t);
-  }, [phase]);
+    const bb = tg?.BackButton;
+    if (!bb) return;
+    if (step > 0) {
+      const cb = () => setStep((s) => Math.max(0, s - 1));
+      bb.show();
+      bb.onClick(cb);
+      return () => { bb.offClick(cb); bb.hide(); };
+    }
+    bb.hide();
+  }, [step, tg]);
 
   function patch(p: Partial<UserPreferences>) {
     setPrefs((prev) => ({ ...prev, ...p }));
   }
 
+  // Сохраняем профиль и ЗАПУСКАЕМ генерацию в фоне, не дожидаясь её здесь —
+  // сразу уводим на календарь, где показывается скелетон и идёт поллинг.
   async function handleSave() {
     setPhase('saving');
     try {
@@ -117,25 +116,17 @@ export default function SetupPage() {
       });
       if (!saveRes.ok) throw new Error('save failed');
 
-      setPhase('generating');
-      setGenStep(0);
-      const genRes = await fetch(`/api/user/generate-plan${getQueryUserId()}`, {
-        method: 'POST',
-        headers: getHeaders(),
-      });
-      if (!genRes.ok) throw new Error('generate failed');
-
-      setPhase('done');
-      tg?.HapticFeedback?.notificationOccurred('success');
-      // Отметить активность
+      // Триггерим фоновую генерацию (ответ приходит мгновенно: { status: 'pending' })
+      await fetch(`/api/user/generate-plan${getQueryUserId()}`, { method: 'POST', headers: getHeaders() });
       fetch(`/api/user/ping${getQueryUserId()}`, { method: 'POST', headers: getHeaders() }).catch(() => {});
-      setTimeout(() => navigate('/calendar'), 800);
+      tg?.HapticFeedback?.notificationOccurred('success');
+      navigate('/calendar');
     } catch {
       setPhase('error');
     }
   }
 
-  const busy = phase === 'saving' || phase === 'generating' || phase === 'done';
+  const busy = phase === 'saving';
   const canNext = step === 0 ? Boolean(prefs.goal) : true;
 
   return (
@@ -300,7 +291,7 @@ export default function SetupPage() {
                         {DAYS.map(({ code, label }) => (
                           <button key={code} onClick={() => patch({ activityDays: toggle(prefs.activityDays ?? [], code) })}
                             className={`chip ${(prefs.activityDays ?? []).includes(code) ? 'active' : ''}`}
-                            style={{ flex: 1, padding: 0, height: 40 }}>{label}</button>
+                            style={{ flex: 1, padding: 0 }}>{label}</button>
                         ))}
                       </div>
 
@@ -316,10 +307,10 @@ export default function SetupPage() {
                         <span style={{ fontSize: 14, fontWeight: 600 }}>Тренировок в неделю</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                           <button onClick={() => patch({ trainingsPerWeek: Math.max(1, (prefs.trainingsPerWeek ?? 3) - 1) })} className="glass-hover"
-                            style={{ width: 36, height: 36, borderRadius: 12, cursor: 'pointer', border: '1px solid var(--card-border)', background: 'var(--card)', color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><MinusIcon size={15} /></button>
+                            style={{ width: 44, height: 44, borderRadius: 13, cursor: 'pointer', border: '1px solid var(--card-border)', background: 'var(--card)', color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><MinusIcon size={16} /></button>
                           <motion.span key={prefs.trainingsPerWeek} initial={{ scale: 1.3, opacity: 0.5 }} animate={{ scale: 1, opacity: 1 }} className="gradient-text" style={{ minWidth: 22, textAlign: 'center', fontWeight: 800, fontSize: 19 }}>{prefs.trainingsPerWeek}</motion.span>
                           <button onClick={() => patch({ trainingsPerWeek: Math.min(7, (prefs.trainingsPerWeek ?? 3) + 1) })}
-                            style={{ width: 36, height: 36, borderRadius: 12, cursor: 'pointer', border: 'none', background: 'var(--gradient)', color: '#06241c', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px -4px var(--glow)' }}><PlusIcon size={15} /></button>
+                            style={{ width: 44, height: 44, borderRadius: 13, cursor: 'pointer', border: 'none', background: 'var(--gradient)', color: '#06241c', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px -4px var(--glow)' }}><PlusIcon size={16} /></button>
                         </div>
                       </div>
                     </div>
@@ -338,10 +329,10 @@ export default function SetupPage() {
                   <span style={{ fontSize: 15, fontWeight: 600 }}>👨‍👩‍👧 Человек в семье</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                     <button onClick={() => patch({ householdSize: Math.max(1, prefs.householdSize - 1) })} className="glass-hover"
-                      style={{ width: 40, height: 40, borderRadius: 13, cursor: 'pointer', border: '1px solid var(--card-border)', background: 'var(--card)', color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><MinusIcon size={17} /></button>
+                      style={{ width: 44, height: 44, borderRadius: 13, cursor: 'pointer', border: '1px solid var(--card-border)', background: 'var(--card)', color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><MinusIcon size={18} /></button>
                     <motion.span key={prefs.householdSize} initial={{ scale: 1.35, opacity: 0.4 }} animate={{ scale: 1, opacity: 1 }} className="gradient-text" style={{ minWidth: 26, textAlign: 'center', fontWeight: 800, fontSize: 22 }}>{prefs.householdSize}</motion.span>
                     <button onClick={() => patch({ householdSize: Math.min(10, prefs.householdSize + 1) })}
-                      style={{ width: 40, height: 40, borderRadius: 13, cursor: 'pointer', border: 'none', background: 'var(--gradient)', color: '#06241c', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px -4px var(--glow)' }}><PlusIcon size={17} /></button>
+                      style={{ width: 44, height: 44, borderRadius: 13, cursor: 'pointer', border: 'none', background: 'var(--gradient)', color: '#06241c', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px -4px var(--glow)' }}><PlusIcon size={18} /></button>
                   </div>
                 </div>
               </div>
@@ -375,26 +366,17 @@ export default function SetupPage() {
             onClick={() => setStep((s) => s + 1)}
           >Далее →</button>
         ) : (
-          <div style={{ flex: 2 }}>
-            <ShimmerButton onClick={handleSave} disabled={busy} background={phase === 'done' ? 'rgba(52,211,153,0.18)' : undefined}>
-              {phase === 'done' ? (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent)' }}><CheckIcon size={18} /> План готов!</span>
-              ) : phase === 'generating' ? (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-                    style={{ width: 16, height: 16, borderRadius: '50%', display: 'inline-block', border: '2px solid var(--card-border)', borderTopColor: 'var(--accent)' }} />
-                  Создаю план...
-                </span>
-              ) : phase === 'saving' ? 'Сохраняю...' : '✨ Создать меню'}
-            </ShimmerButton>
-          </div>
+          <button
+            className="btn btn-primary"
+            style={{ flex: 2 }}
+            disabled={busy}
+            onClick={handleSave}
+          >
+            {busy ? 'Сохраняю...' : '✨ Создать меню'}
+          </button>
         )}
       </div>
 
-      {phase === 'generating' && (
-        <motion.p key={genStep} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-          style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, margin: '0 0 16px' }}>{GEN_STEPS[genStep]}</motion.p>
-      )}
       {phase === 'error' && (
         <p style={{ textAlign: 'center', color: 'var(--rose)', fontSize: 13, margin: '0 0 16px' }}>
           Не получилось — попробуйте ещё раз или отправьте /plan боту

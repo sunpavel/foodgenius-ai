@@ -238,11 +238,11 @@ function MealCard({ label, tint, meal, delay, dayIndex, mealKey, onReplace }: {
               {/* Действия: лайк / дизлайк / заменить */}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => react('like')} className="btn btn-ghost"
-                  style={{ flex: 1, height: 40, fontSize: 15, opacity: reacted === 'like' ? 1 : 0.7, borderColor: reacted === 'like' ? 'var(--accent)' : undefined }}>👍</button>
+                  style={{ flex: 1, height: 44, fontSize: 16, opacity: reacted === 'like' ? 1 : 0.7, borderColor: reacted === 'like' ? 'var(--accent)' : undefined }}>👍</button>
                 <button onClick={() => react('dislike')} className="btn btn-ghost"
-                  style={{ flex: 1, height: 40, fontSize: 15, opacity: reacted === 'dislike' ? 1 : 0.7, borderColor: reacted === 'dislike' ? 'var(--rose)' : undefined }}>👎</button>
+                  style={{ flex: 1, height: 44, fontSize: 16, opacity: reacted === 'dislike' ? 1 : 0.7, borderColor: reacted === 'dislike' ? 'var(--rose)' : undefined }}>👎</button>
                 <button onClick={handleReplace} className="btn btn-ghost" disabled={replacing}
-                  style={{ flex: 2, height: 40, fontSize: 13 }}>
+                  style={{ flex: 2, height: 44, fontSize: 13 }}>
                   {replacing ? '⏳ Заменяю...' : '↻ Заменить'}
                 </button>
               </div>
@@ -254,71 +254,126 @@ function MealCard({ label, tint, meal, delay, dayIndex, mealKey, onReplace }: {
   );
 }
 
+const GEN_MESSAGES = [
+  'Анализирую ваш профиль…',
+  'Подбираю блюда под цель…',
+  'Считаю КБЖУ на каждый день…',
+  'Собираю список покупок…',
+  'Почти готово…',
+];
+
+// Скелетон во время фоновой генерации — пользователь уже «в приложении»,
+// а не ждёт на заблокированной кнопке.
+function GeneratingSkeleton() {
+  const [msg, setMsg] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setMsg((m) => (m + 1) % GEN_MESSAGES.length), 4000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div style={{ padding: '20px 16px 0' }}>
+      <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>
+        Меню <span className="gradient-text">на неделю</span>
+      </h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0 18px' }}>
+        <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+          style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--card-border)', borderTopColor: 'var(--accent)', flexShrink: 0 }} />
+        <AnimatePresence mode="wait">
+          <motion.span key={msg} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+            style={{ fontSize: 14, color: 'var(--muted)' }}>{GEN_MESSAGES[msg]}</motion.span>
+        </AnimatePresence>
+      </div>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="glass" style={{ display: 'flex', gap: 14, padding: 14, marginBottom: 12 }}>
+          <motion.div animate={{ opacity: [0.4, 0.8, 0.4] }} transition={{ repeat: Infinity, duration: 1.4, delay: i * 0.15 }}
+            style={{ width: 56, height: 56, borderRadius: 16, background: 'rgba(255,255,255,0.06)', flexShrink: 0 }} />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8 }}>
+            <motion.div animate={{ opacity: [0.4, 0.8, 0.4] }} transition={{ repeat: Infinity, duration: 1.4, delay: i * 0.15 }}
+              style={{ height: 12, width: '40%', borderRadius: 6, background: 'rgba(255,255,255,0.06)' }} />
+            <motion.div animate={{ opacity: [0.4, 0.8, 0.4] }} transition={{ repeat: Infinity, duration: 1.4, delay: i * 0.15 + 0.1 }}
+              style={{ height: 16, width: '75%', borderRadius: 6, background: 'rgba(255,255,255,0.06)' }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type Phase = 'loading' | 'generating' | 'ready' | 'empty';
+
 export default function CalendarPage() {
   const [plan, setPlan] = useState<MealPlan | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-  const [genError, setGenError] = useState(false);
+  const [phase, setPhase] = useState<Phase>('loading');
   const [selectedDay, setSelectedDay] = useState<string>(JS_TO_KEY[new Date().getDay()]);
-  const { initData, getHeaders, getQueryUserId } = useTelegram();
+  const { tg, initData, getHeaders, getQueryUserId } = useTelegram();
+
+  // Поллинг статуса фоновой генерации
+  function pollStatus() {
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/user/generate-status${getQueryUserId()}`, { headers: getHeaders() });
+        const { status } = await r.json();
+        if (status === 'ready') {
+          const pr = await fetch(`/api/user/meal-plan${getQueryUserId()}`, { headers: getHeaders() });
+          if (pr.ok) { setPlan(await pr.json()); setPhase('ready'); tg?.HapticFeedback?.notificationOccurred('success'); return; }
+        }
+        if (status === 'error') { setPhase('empty'); return; }
+        setTimeout(tick, 3000); // pending / idle — ждём дальше
+      } catch {
+        setTimeout(tick, 3000);
+      }
+    };
+    setTimeout(tick, 2000);
+  }
+
+  async function startGeneration() {
+    setPhase('generating');
+    tg?.HapticFeedback?.impactOccurred('medium');
+    await fetch(`/api/user/generate-plan${getQueryUserId()}`, { method: 'POST', headers: getHeaders() }).catch(() => {});
+    pollStatus();
+  }
 
   useEffect(() => {
-    fetch(`/api/user/meal-plan${getQueryUserId()}`, { headers: getHeaders() })
-      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
-      .then(setPlan)
-      // Демо-план только вне Telegram (предпросмотр в браузере).
-      // Внутри Telegram честно показываем «плана нет».
-      .catch(() => setPlan(initData ? null : DEMO_PLAN))
-      .finally(() => setLoading(false));
+    (async () => {
+      try {
+        const r = await fetch(`/api/user/meal-plan${getQueryUserId()}`, { headers: getHeaders() });
+        if (r.ok) { setPlan(await r.json()); setPhase('ready'); return; }
+        // Плана нет — возможно, идёт фоновая генерация (после онбординга)
+        const s = await fetch(`/api/user/generate-status${getQueryUserId()}`, { headers: getHeaders() });
+        const { status } = await s.json();
+        if (status === 'pending') { setPhase('generating'); pollStatus(); return; }
+        // Вне Telegram (превью в браузере) показываем демо-план
+        if (!initData) { setPlan(DEMO_PLAN); setPhase('ready'); return; }
+        setPhase('empty');
+      } catch {
+        if (!initData) { setPlan(DEMO_PLAN); setPhase('ready'); return; }
+        setPhase('empty');
+      }
+    })();
   }, []);
 
-  if (loading) {
+  if (phase === 'loading') {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh' }}>
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-          style={{
-            width: 36, height: 36, borderRadius: '50%',
-            border: '3px solid var(--card-border)', borderTopColor: 'var(--accent)',
-          }}
-        />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80dvh' }}>
+        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+          style={{ width: 36, height: 36, borderRadius: '50%', border: '3px solid var(--card-border)', borderTopColor: 'var(--accent)' }} />
       </div>
     );
   }
 
-  if (!plan) {
+  if (phase === 'generating') return <GeneratingSkeleton />;
+
+  if (phase === 'empty' || !plan) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '70vh', padding: '0 32px', textAlign: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '70dvh', padding: '0 32px', textAlign: 'center' }}>
         <div style={{ fontSize: 56, marginBottom: 16 }}>🍳</div>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Плана пока нет</h2>
         <p style={{ color: 'var(--muted)', fontSize: 14, lineHeight: 1.5, marginTop: 8, marginBottom: 24 }}>
-          AI соберёт меню на неделю под ваш профиль за ~30 секунд
+          AI соберёт меню на неделю под ваш профиль за ~1–2 минуты
         </p>
-        <button
-          className="btn btn-primary"
-          style={{ maxWidth: 320, opacity: generating ? 0.7 : 1 }}
-          disabled={generating}
-          onClick={async () => {
-            setGenerating(true);
-            try {
-              const r = await fetch(`/api/user/generate-plan${getQueryUserId()}`, { method: 'POST', headers: getHeaders() });
-              if (!r.ok) throw new Error();
-              setPlan(await r.json());
-            } catch {
-              setGenError(true);
-            } finally {
-              setGenerating(false);
-            }
-          }}
-        >
-          {generating ? 'Создаю план... ~30 сек' : '🚀 Сгенерировать план'}
+        <button className="btn btn-primary" style={{ maxWidth: 320 }} onClick={startGeneration}>
+          🚀 Сгенерировать план
         </button>
-        {genError && (
-          <p style={{ color: 'var(--rose)', fontSize: 13, marginTop: 12 }}>
-            Не получилось — сначала заполните Профиль или отправьте /plan боту
-          </p>
-        )}
       </div>
     );
   }

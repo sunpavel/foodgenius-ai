@@ -2,7 +2,6 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useConfetti } from '../components/ui/Confetti';
-import { ShimmerButton } from '../components/ui/ShimmerButton';
 import { CheckIcon, RotateIcon } from '../components/ui/Icon';
 import { useTelegram } from '../hooks/useTelegram';
 import { DEMO_PLAN } from '../data/demoPlan';
@@ -86,9 +85,9 @@ export default function ShoppingPage() {
         <p style={{ color: 'var(--muted)', fontSize: 14, lineHeight: 1.5, marginTop: 8, marginBottom: 24 }}>
           Список покупок на неделю появится после создания меню
         </p>
-        <div style={{ width: '100%', maxWidth: 320 }}>
-          <ShimmerButton onClick={() => navigate('/setup')}>✨ Создать меню на неделю с AI</ShimmerButton>
-        </div>
+        <button className="btn btn-primary" style={{ maxWidth: 320 }} onClick={() => navigate('/setup')}>
+          ✨ Создать меню на неделю с AI
+        </button>
       </div>
     );
   }

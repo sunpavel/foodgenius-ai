@@ -102,8 +102,12 @@ export function createRouter(): Router {
     }
   });
 
-  // Сгенерировать план прямо из Mini App (бесшовно, без команды /plan в чате)
-  const generating = new Set<number>();
+  // Асинхронная генерация: запускаем в фоне, сразу отвечаем pending.
+  // Клиент не ждёт 60–90с на месте, а уходит на календарь со скелетоном
+  // и поллит /generate-status. Результат пишется на Volume в любом случае.
+  type Job = { status: 'pending' | 'ready' | 'error'; error?: string };
+  const jobs = new Map<number, Job>();
+
   router.post('/user/generate-plan', async (req: Request, res: Response) => {
     try {
       const userId = resolveUserId(req);
@@ -112,19 +116,37 @@ export function createRouter(): Router {
       const data = await loadUserData(userId);
       if (!data?.preferences) return res.status(400).json({ error: 'No preferences' });
 
-      if (generating.has(userId)) return res.status(429).json({ error: 'Already generating' });
-      generating.add(userId);
-      try {
-        const mealPlan = await generateMealPlan(data.preferences, data.mealPlan, data.dislikedDishes ?? []);
-        await saveUserData(userId, { mealPlan, lastActive: new Date().toISOString() });
-        res.json(mealPlan);
-      } finally {
-        generating.delete(userId);
+      // Уже генерируется — не дублируем (защита от спама и лишних вызовов OpenAI)
+      if (jobs.get(userId)?.status === 'pending') {
+        return res.json({ status: 'pending' });
       }
+
+      jobs.set(userId, { status: 'pending' });
+      res.json({ status: 'pending' }); // отвечаем сразу, генерация — ниже в фоне
+
+      void (async () => {
+        try {
+          const mealPlan = await generateMealPlan(
+            data.preferences!, data.mealPlan, data.dislikedDishes ?? [],
+          );
+          await saveUserData(userId, { mealPlan, lastActive: new Date().toISOString() });
+          jobs.set(userId, { status: 'ready' });
+        } catch (err) {
+          console.error('Webapp plan generation error:', err);
+          jobs.set(userId, { status: 'error', error: String(err) });
+        }
+      })();
     } catch (err) {
-      console.error('Webapp plan generation error:', err);
+      console.error('generate-plan error:', err);
       res.status(500).json({ error: String(err) });
     }
+  });
+
+  // Статус фоновой генерации
+  router.get('/user/generate-status', async (req: Request, res: Response) => {
+    const userId = resolveUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    res.json({ status: jobs.get(userId)?.status ?? 'idle' });
   });
 
   // Get meal plan

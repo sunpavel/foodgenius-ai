@@ -64,7 +64,7 @@ function GlassTabbar() {
 
 function Spinner() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100dvh' }}>
       <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
         style={{ width: 36, height: 36, borderRadius: '50%', border: '3px solid var(--card-border)', borderTopColor: 'var(--accent)' }} />
     </div>
@@ -73,8 +73,9 @@ function Spinner() {
 
 function AppShell() {
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
-  const { getHeaders, getQueryUserId } = useTelegram();
+  const { tg, getHeaders, getQueryUserId } = useTelegram();
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Пинг активности при каждом открытии
@@ -86,11 +87,27 @@ function AppShell() {
       .catch(() => setOnboardingDone(false));
   }, []);
 
+  // Нативная кнопка «Назад» Telegram: на внутренних табах ведёт на меню,
+  // на /calendar скрыта, на /setup управление берёт сама страница.
+  useEffect(() => {
+    const bb = tg?.BackButton;
+    if (!bb) return;
+    if (location.pathname === '/shopping') {
+      const cb = () => navigate('/calendar');
+      bb.show();
+      bb.onClick(cb);
+      return () => { bb.offClick(cb); bb.hide(); };
+    }
+    if (location.pathname === '/calendar') {
+      bb.hide();
+    }
+  }, [location.pathname, tg, navigate]);
+
   const showNav = location.pathname !== '/setup';
   if (onboardingDone === null) return <Spinner />;
 
   return (
-    <div className="app-bg" style={{ minHeight: '100vh', position: 'relative' }}>
+    <div className="app-bg" style={{ minHeight: '100dvh', position: 'relative' }}>
       <div style={{ position: 'relative', zIndex: 1, paddingBottom: showNav ? 84 : 0 }}>
         <Routes>
           <Route path="/" element={<Navigate to={onboardingDone ? '/calendar' : '/setup'} replace />} />
