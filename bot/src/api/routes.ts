@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import {
   loadUserData, saveUserData, updateLastActive,
-  calculateDailyKcal, generateReferralCode, getTodayFromPlan,
+  calculateDailyKcal, generateReferralCode, getTodayFromPlan, getAllUserIds,
 } from '../data/user-storage';
 import { validateTelegramWebAppData, extractUserIdFromInitData } from '../utils/validation';
 import { generateMealPlan, replaceSingleMeal } from '../ai/meal-planner';
@@ -255,6 +255,38 @@ export function createRouter(): Router {
         progressText,
         isTrainingDay: Boolean(data.preferences?.activityDays?.includes(todayWeekDay())),
       });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Метрики рефералов для контент-завода: сколько /start пришло по каждому коду (start_code роликов).
+  // referredBy пишется в start.ts в верхнем регистре без префикса ref_ — это и есть start_code.
+  router.get('/metrics/referrals', async (req: Request, res: Response) => {
+    try {
+      // Необязательная защита: если задан METRICS_TOKEN — требуем его в заголовке/запросе.
+      const token = process.env.METRICS_TOKEN;
+      if (token) {
+        const provided = (req.headers['x-metrics-token'] as string) ?? (req.query.token as string) ?? '';
+        if (provided !== token) return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const ids = await getAllUserIds();
+      const byCode: Record<string, number> = {};
+      let totalReferred = 0;
+      for (const id of ids) {
+        const user = await loadUserData(id);
+        const ref = user?.referredBy?.trim().toUpperCase();
+        if (!ref) continue;
+        byCode[ref] = (byCode[ref] || 0) + 1;
+        totalReferred += 1;
+      }
+
+      const code = (req.query.code as string | undefined)?.trim().toUpperCase();
+      if (code) {
+        return res.json({ ok: true, code, bot_starts: byCode[code] ?? 0 });
+      }
+      return res.json({ ok: true, total_users: ids.length, total_referred: totalReferred, by_code: byCode });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
